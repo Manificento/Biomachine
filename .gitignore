@@ -1,3 +1,16 @@
 node_modules/
-.env
 dist/
+android/build/
+android/.gradle/
+android/app/build/
+android/.idea/
+android/local.properties
+android/app/release/
+android/captures/
+.env
+.env.local
+*.keystore
+*.jks
+*.tar.gz
+.DS_Store
+*.log

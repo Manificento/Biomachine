@@ -1,5 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { STORAGE_KEY } from "../data/programData";
+import { storage } from "../lib/storage";
+import { Filesystem, Directory, Encoding } from "@capacitor/filesystem";
+import { Share } from "@capacitor/share";
+import { Capacitor } from "@capacitor/core";
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -12,6 +16,13 @@ export interface UserPrefs {
   onboardingComplete: boolean;
   startDate: string | null; // ISO date string of program start
   currentWeek: number; // 0–12
+  // Reminders
+  reminderWorkoutEnabled: boolean;
+  reminderWorkoutTime: string;       // HH:MM
+  reminderMorningMetrics: boolean;
+  reminderCreatine: boolean;
+  reminderCreatineTime: string;
+  reminderWater: boolean;
 }
 
 export interface DailyLog {
@@ -67,12 +78,21 @@ export interface TestRecord {
   data: Record<string, number | string>;
 }
 
+export interface ProgressPhoto {
+  id: string;
+  date: string;       // ISO
+  uri: string;        // webPath or data URI
+  label: 'pre' | 'week4' | 'week8' | 'week12' | 'custom';
+  note?: string;
+}
+
 export interface AppState {
   user: UserPrefs;
   dailyLogs: DailyLog[];
   workouts: WorkoutLog[];
   tests: TestRecord[];
   achievements: string[]; // earned achievement ids
+  progressPhotos: ProgressPhoto[];
 }
 
 // ─── Defaults ─────────────────────────────────────────────────
@@ -87,38 +107,50 @@ const DEFAULT_STATE: AppState = {
     onboardingComplete: false,
     startDate: null,
     currentWeek: 0,
+    reminderWorkoutEnabled: false,
+    reminderWorkoutTime: "07:00",
+    reminderMorningMetrics: false,
+    reminderCreatine: false,
+    reminderCreatineTime: "09:00",
+    reminderWater: false,
   },
   dailyLogs: [],
   workouts: [],
   tests: [],
   achievements: [],
+  progressPhotos: [],
 };
 
 // ─── Helpers ──────────────────────────────────────────────────
 
-function safeLoad(): AppState {
+function mergeState(parsed: Partial<AppState> | null): AppState {
+  if (!parsed) return DEFAULT_STATE;
+  return {
+    user: { ...DEFAULT_STATE.user, ...parsed.user },
+    dailyLogs: parsed.dailyLogs ?? [],
+    workouts: parsed.workouts ?? [],
+    tests: parsed.tests ?? [],
+    achievements: parsed.achievements ?? [],
+    progressPhotos: parsed.progressPhotos ?? [],
+  };
+}
+
+async function safeLoad(): Promise<AppState> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = await storage.get(STORAGE_KEY);
     if (!raw) return DEFAULT_STATE;
     const parsed = JSON.parse(raw) as Partial<AppState>;
-    // Merge with defaults to handle missing fields
-    return {
-      user: { ...DEFAULT_STATE.user, ...parsed.user },
-      dailyLogs: parsed.dailyLogs ?? [],
-      workouts: parsed.workouts ?? [],
-      tests: parsed.tests ?? [],
-      achievements: parsed.achievements ?? [],
-    };
+    return mergeState(parsed);
   } catch {
     return DEFAULT_STATE;
   }
 }
 
-function safeSave(state: AppState) {
+async function safeSave(state: AppState) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    await storage.set(STORAGE_KEY, JSON.stringify(state));
   } catch {
-    console.warn("Failed to save state to localStorage");
+    console.warn("Failed to save state");
   }
 }
 
@@ -139,29 +171,50 @@ export function getWeekNumber(startDate: string | null): number {
 // ─── Hook ─────────────────────────────────────────────────────
 
 export function useStore() {
-  const [state, setStateRaw] = useState<AppState>(safeLoad);
+  const [state, setStateRaw] = useState<AppState>(DEFAULT_STATE);
+  const [isLoaded, setIsLoaded] = useState(false);
   const [saveIndicator, setSaveIndicator] = useState(false);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+  // Async load on mount
+  useEffect(() => {
+    let cancelled = false;
+    safeLoad().then((s) => {
+      if (cancelled) return;
+      setStateRaw(s);
+      setIsLoaded(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Queue saves to avoid race conditions on native preferences
+  const queueSave = useCallback((next: AppState) => {
+    saveQueueRef.current = saveQueueRef.current.then(() => safeSave(next));
+  }, []);
 
   const setState = useCallback((updater: (prev: AppState) => AppState) => {
     setStateRaw((prev) => {
       const next = updater(prev);
-      safeSave(next);
+      queueSave(next);
       setSaveIndicator(true);
       setTimeout(() => setSaveIndicator(false), 1500);
       return next;
     });
-  }, []);
+  }, [queueSave]);
 
-  // Auto-save every 10 seconds if there's unsaved state (belt-and-suspenders)
+  // Auto-save belt-and-suspenders (every 10s)
   useEffect(() => {
+    if (!isLoaded) return;
     const interval = setInterval(() => {
       setStateRaw((prev) => {
-        safeSave(prev);
+        queueSave(prev);
         return prev;
       });
     }, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isLoaded, queueSave]);
 
   // ── User ─────────────────────────────────────────────────────
   const updateUser = useCallback((patch: Partial<UserPrefs>) => {
@@ -223,13 +276,21 @@ export function useStore() {
     });
   }, [setState]);
 
+  // ── Progress photos ──────────────────────────────────────────
+  const addProgressPhoto = useCallback((photo: ProgressPhoto) => {
+    setState((prev) => ({ ...prev, progressPhotos: [...prev.progressPhotos, photo] }));
+  }, [setState]);
+
+  const removeProgressPhoto = useCallback((id: string) => {
+    setState((prev) => ({ ...prev, progressPhotos: prev.progressPhotos.filter((p) => p.id !== id) }));
+  }, [setState]);
+
   // ── Computed ─────────────────────────────────────────────────
   const currentWeek = getWeekNumber(state.user.startDate);
 
   const workoutDaysThisWeek = (() => {
     const now = new Date();
     const dayOfWeek = now.getDay();
-    // Start of current week (Monday)
     const monday = new Date(now);
     monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7));
     monday.setHours(0, 0, 0, 0);
@@ -253,41 +314,117 @@ export function useStore() {
     return count;
   })();
 
-  // Export
-  const exportData = useCallback(() => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `biomachine-export-${todayStr()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  // ── Export / Import ──────────────────────────────────────────
+  const exportData = useCallback(async () => {
+    const data = JSON.stringify(state, null, 2);
+    const filename = `biomachine-${todayStr()}.json`;
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const result = await Filesystem.writeFile({
+          path: filename,
+          data,
+          directory: Directory.Documents,
+          encoding: Encoding.UTF8,
+          recursive: true,
+        });
+        try {
+          await Share.share({
+            title: 'Экспорт Биомашины',
+            url: result.uri,
+            dialogTitle: 'Сохранить или отправить данные',
+          });
+        } catch {
+          /* user cancelled share */
+        }
+      } catch (e) {
+        console.error('Export failed', e);
+        alert('Не удалось сохранить файл');
+      }
+    } else {
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  }, [state]);
+
+  const exportCSV = useCallback(async () => {
+    const header = ['date', 'session', 'week', 'exercise', 'set', 'weight', 'reps', 'rpe', 'notes'];
+    const rows: string[][] = [header];
+    for (const w of state.workouts) {
+      for (const ex of w.exercises) {
+        ex.sets.forEach((s, idx) => {
+          rows.push([
+            w.date,
+            w.session,
+            String(w.week),
+            ex.exerciseName,
+            String(idx + 1),
+            String(s.weight),
+            String(s.reps),
+            String(s.rpe),
+            (s.note || '').replace(/"/g, '""'),
+          ]);
+        });
+      }
+    }
+    const csv = rows.map((r) => r.map((c) => `"${c}"`).join(',')).join('\n');
+    const filename = `biomachine-workouts-${todayStr()}.csv`;
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const result = await Filesystem.writeFile({
+          path: filename,
+          data: csv,
+          directory: Directory.Documents,
+          encoding: Encoding.UTF8,
+          recursive: true,
+        });
+        try {
+          await Share.share({
+            title: 'Экспорт CSV — Биомашина',
+            url: result.uri,
+            dialogTitle: 'Сохранить или отправить CSV',
+          });
+        } catch { /* cancelled */ }
+      } catch (e) {
+        console.error('CSV export failed', e);
+        alert('Не удалось сохранить CSV');
+      }
+    } else {
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
   }, [state]);
 
   const importData = useCallback((json: string) => {
     try {
       const parsed = JSON.parse(json) as Partial<AppState>;
-      const merged: AppState = {
-        user: { ...DEFAULT_STATE.user, ...parsed.user },
-        dailyLogs: parsed.dailyLogs ?? [],
-        workouts: parsed.workouts ?? [],
-        tests: parsed.tests ?? [],
-        achievements: parsed.achievements ?? [],
-      };
+      const merged = mergeState(parsed);
       setStateRaw(merged);
-      safeSave(merged);
+      queueSave(merged);
     } catch {
       alert("Ошибка импорта данных");
     }
-  }, []);
+  }, [queueSave]);
 
   const resetData = useCallback(() => {
     setStateRaw(DEFAULT_STATE);
-    safeSave(DEFAULT_STATE);
-  }, []);
+    queueSave(DEFAULT_STATE);
+  }, [queueSave]);
 
   return {
     state,
+    isLoaded,
     saveIndicator,
     updateUser,
     getTodayLog,
@@ -295,10 +432,13 @@ export function useStore() {
     saveWorkout,
     saveTest,
     unlockAchievement,
+    addProgressPhoto,
+    removeProgressPhoto,
     currentWeek,
     workoutDaysThisWeek,
     streak,
     exportData,
+    exportCSV,
     importData,
     resetData,
   };

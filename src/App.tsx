@@ -8,10 +8,10 @@ import {
   Check, X, Plus, Minus, Info, Timer,
   ChevronLeft, AlertTriangle, Download, Upload, RefreshCw,
   Volume2, Bell, User, Save, ArrowRight,
-  Activity,
+  Activity, Camera as CameraIcon, FileText,
 } from "lucide-react";
 
-import { useStore, todayStr, type WorkoutLog, type SetLog } from "./store/useStore";
+import { useStore, todayStr, type WorkoutLog, type SetLog, type ProgressPhoto } from "./store/useStore";
 import {
   MESOCYCLES, getMesocycleForWeek, getMesocycleIndexForWeek,
   WEEK_DAYS, WARMUP_BLOCKS, ALL_WORKOUTS, getWorkoutForSession,
@@ -19,6 +19,17 @@ import {
   SLEEP_HYGIENE, BREATHING_EXERCISES, GLOSSARY, FOOD_REFERENCE,
   PROGRAM_NAME,
 } from "./data/programData";
+import { useCountdown } from "./hooks/useTimer";
+import { playBeep } from "./lib/sound";
+import { hapticLight, hapticHeavy, hapticSuccess } from "./lib/haptics";
+import { keepAwake, allowSleep } from "./lib/wakeLock";
+import {
+  scheduleWorkoutReminder, scheduleMorningMetricsReminder,
+  scheduleCreatineReminder, scheduleWaterReminder,
+  cancelReminder, REMINDER_IDS, ensurePermission as ensureNotifPermission,
+} from "./lib/notifications";
+import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
+import { Capacitor } from "@capacitor/core";
 
 // ─── Accent colors ────────────────────────────────────────────
 const ACCENT = "#FF6B35";
@@ -103,34 +114,7 @@ function NumberInput({ value, onChange, min = 0, max = 9999, step = 1, className
   );
 }
 
-// ─── Timer Hook ───────────────────────────────────────────────
-
-function useCountdown(initialSeconds: number) {
-  const [seconds, setSeconds] = useState(initialSeconds);
-  const [running, setRunning] = useState(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const start = useCallback(() => setRunning(true), []);
-  const pause = useCallback(() => setRunning(false), []);
-  const reset = useCallback((s?: number) => { setRunning(false); setSeconds(s ?? initialSeconds); }, [initialSeconds]);
-  const adjust = useCallback((delta: number) => setSeconds((prev) => Math.max(0, prev + delta)), []);
-
-  useEffect(() => {
-    if (running) {
-      intervalRef.current = setInterval(() => {
-        setSeconds((prev) => {
-          if (prev <= 1) { setRunning(false); return 0; }
-          return prev - 1;
-        });
-      }, 1000);
-    } else if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-    }
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [running]);
-
-  return { seconds, running, start, pause, reset, adjust };
-}
+// ─── Timer Hook is imported from ./hooks/useTimer (background-safe) ──
 
 function fmtTime(s: number) {
   const m = Math.floor(s / 60);
@@ -271,28 +255,23 @@ function RestTimer({ initialSeconds, onClose, nextLabel }: {
   initialSeconds: number; onClose: () => void; nextLabel?: string;
 }) {
   const { seconds, running, start, pause, adjust } = useCountdown(initialSeconds);
-  const audioRef = useRef<AudioContext | null>(null);
   const [done, setDone] = useState(false);
 
-  const beep = useCallback((freq: number, dur: number) => {
-    try {
-      if (!audioRef.current) audioRef.current = new AudioContext();
-      const osc = audioRef.current.createOscillator();
-      const gain = audioRef.current.createGain();
-      osc.connect(gain); gain.connect(audioRef.current.destination);
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.3, audioRef.current.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, audioRef.current.currentTime + dur);
-      osc.start(); osc.stop(audioRef.current.currentTime + dur);
-    } catch { /* ignore */ }
-  }, []);
-
   useEffect(() => {
-    if (seconds === 10 && running) beep(440, 0.2);
-    if (seconds === 0 && !done) { setDone(true); beep(880, 0.5); setTimeout(() => beep(880, 0.3), 600); }
-  }, [seconds, running, done, beep]);
+    if (seconds === 10 && running) playBeep('warn');
+    if (seconds === 0 && !done) {
+      setDone(true);
+      playBeep('finish');
+      hapticHeavy();
+    }
+  }, [seconds, running, done]);
 
-  useEffect(() => { start(); }, []); // eslint-disable-line
+  // Start on mount, keep screen awake, release on unmount
+  useEffect(() => {
+    start();
+    keepAwake();
+    return () => { allowSleep(); };
+  }, []); // eslint-disable-line
 
   const pct = 1 - seconds / initialSeconds;
 
@@ -425,6 +404,12 @@ function WorkoutScreen({ session, week, onBack, onFinish }: {
     return () => clearInterval(t);
   }, []);
 
+  // Keep screen awake during workout
+  useEffect(() => {
+    keepAwake();
+    return () => { allowSleep(); };
+  }, []);
+
   if (!workout) return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center flex-col gap-4">
       <div className="text-4xl">😅</div>
@@ -437,6 +422,8 @@ function WorkoutScreen({ session, week, onBack, onFinish }: {
   const doneSets = Object.values(setsData).reduce((a, b) => a + b.filter((s) => s.done).length, 0);
 
   const updateSet = (exId: string, idx: number, patch: Partial<SetLog>) => {
+    // Haptic on toggling done
+    if (typeof patch.done === 'boolean' && patch.done) hapticLight();
     setSetsData((prev) => ({
       ...prev,
       [exId]: prev[exId].map((s, i) => i === idx ? { ...s, ...patch } : s),
@@ -462,6 +449,7 @@ function WorkoutScreen({ session, week, onBack, onFinish }: {
       startTime: startTime.toISOString(),
       endTime: endTime.toISOString(),
     };
+    hapticSuccess();
     setConfetti(true);
     setTimeout(() => { onFinish(log); }, 2000);
   };
@@ -2080,11 +2068,29 @@ function MoreScreen({ onNavigate }: { onNavigate: (t: string) => void }) {
 
 export default function App() {
   const store = useStore();
-  const { state, updateUser, saveWorkout, currentWeek } = store;
+  const { state, isLoaded, updateUser, saveWorkout, currentWeek } = store;
   const [tab, setTab] = useState("dashboard");
   const [activeScreen, setActiveScreen] = useState<string | null>(null); // full screens
   const [workoutSession, setWorkoutSession] = useState<string | null>(null);
   const [confetti, setConfetti] = useState(false);
+
+  // Request notification permissions on first launch (native)
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      ensureNotifPermission().catch(() => { /* ignore */ });
+    }
+  }, []);
+
+  // Show splash/loader until storage is loaded (avoid flash of empty state)
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center">
+        <div className="text-6xl animate-pulse mb-4">🤖</div>
+        <div className="text-orange-400 font-bold text-lg">Биомашина</div>
+        <div className="text-slate-500 text-xs mt-2">Загрузка…</div>
+      </div>
+    );
+  }
 
   // Onboarding
   if (!state.user.onboardingComplete) {

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2732 2732">
+  <rect width="2732" height="2732" fill="#0f172a"/>
+  <g transform="translate(854, 854)">
+    <rect width="1024" height="1024" rx="180" ry="180" fill="#FF6B35"/>
+    <g fill="white">
+      <rect x="282" y="280" width="460" height="380" rx="60" ry="60" fill="white"/>
+      <circle cx="412" cy="450" r="42" fill="#FF6B35"/>
+      <circle cx="612" cy="450" r="42" fill="#FF6B35"/>
+      <rect x="402" y="540" width="220" height="32" rx="16" ry="16" fill="#FF6B35"/>
+      <line x1="512" y1="280" x2="512" y2="200" stroke="white" stroke-width="22" stroke-linecap="round"/>
+      <circle cx="512" cy="180" r="32" fill="white"/>
+      <rect x="332" y="680" width="360" height="80" rx="40" ry="40" fill="white"/>
+      <path d="M 512 720 L 472 800 L 512 800 L 482 880 L 552 780 L 512 780 Z" fill="#FF6B35"/>
+    </g>
+  </g>
+  <text x="1366" y="2200" font-family="sans-serif" font-size="80" font-weight="900" fill="#FF6B35" text-anchor="middle">БИОМАШИНА</text>
+  <text x="1366" y="2280" font-family="sans-serif" font-size="40" fill="#94a3b8" text-anchor="middle">12-недельная программа</text>
+</svg>

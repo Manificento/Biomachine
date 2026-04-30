@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#FF6B35"/>
+  <!-- Stylized robot/biomachine glyph -->
+  <g fill="white" stroke="white">
+    <!-- Head -->
+    <rect x="282" y="280" width="460" height="380" rx="60" ry="60" fill="white"/>
+    <!-- Eyes -->
+    <circle cx="412" cy="450" r="42" fill="#FF6B35"/>
+    <circle cx="612" cy="450" r="42" fill="#FF6B35"/>
+    <!-- Mouth -->
+    <rect x="402" y="540" width="220" height="32" rx="16" ry="16" fill="#FF6B35"/>
+    <!-- Antenna -->
+    <line x1="512" y1="280" x2="512" y2="200" stroke="white" stroke-width="22" stroke-linecap="round"/>
+    <circle cx="512" cy="180" r="32" fill="white"/>
+    <!-- Body / shoulders -->
+    <rect x="332" y="680" width="360" height="80" rx="40" ry="40" fill="white"/>
+    <!-- Lightning bolt accent (biomachine = power) -->
+    <path d="M 512 720 L 472 800 L 512 800 L 482 880 L 552 780 L 512 780 Z" fill="#FF6B35" stroke="#FF6B35"/>
+  </g>
+</svg>

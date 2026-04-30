@@ -1420,8 +1420,31 @@ function SleepScreen({ store }: { store: ReturnType<typeof import("./store/useSt
 // ════════════════════════════════════════════════════════════════
 
 function TestsScreen({ store }: { store: ReturnType<typeof import("./store/useStore").useStore> }) {
-  const { state, saveTest } = store;
+  const { state, saveTest, addProgressPhoto, removeProgressPhoto } = store;
   const [activeLabel, setActiveLabel] = useState<"pre" | "week5" | "week9" | "week12">("pre");
+  const [photoPreview, setPhotoPreview] = useState<ProgressPhoto | null>(null);
+
+  const takePhoto = useCallback(async (label: ProgressPhoto['label']) => {
+    try {
+      const photo = await Camera.getPhoto({
+        quality: 80,
+        source: CameraSource.Prompt,
+        resultType: CameraResultType.Uri,
+        saveToGallery: false,
+      });
+      const uri = photo.webPath || photo.path || '';
+      if (!uri) return;
+      addProgressPhoto({
+        id: `${Date.now()}`,
+        date: new Date().toISOString(),
+        uri,
+        label,
+      });
+    } catch (e) {
+      // user cancelled or error
+      if (Capacitor.isNativePlatform()) console.error('Camera error', e);
+    }
+  }, [addProgressPhoto]);
   const existing = state.tests.find((t) => t.label === activeLabel);
   const [form, setForm] = useState<Record<string, string>>(
     Object.fromEntries(TEST_FIELDS.map((f) => [f.id, String(existing?.data[f.id] ?? "")]))
@@ -1542,6 +1565,76 @@ function TestsScreen({ store }: { store: ReturnType<typeof import("./store/useSt
               ⚠️ Не все критерии выполнены. Продлевай Мезоцикл 1 ещё на 2 недели, не перескакивай. Профилактика травм важнее расписания.
             </div>
           )}
+        </div>
+      )}
+
+      {/* Progress photos */}
+      <div className="bg-slate-800 rounded-2xl border border-slate-700/50 p-4">
+        <div className="text-sm font-semibold text-white mb-3">📸 Прогресс-фото</div>
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          {(['pre', 'week4', 'week8', 'week12'] as const).map((label) => {
+            const labelNames = { pre: "Pre", week4: "Нед. 4", week8: "Нед. 8", week12: "Нед. 12" };
+            return (
+              <button key={label} onClick={() => takePhoto(label)}
+                className="bg-slate-900/60 hover:bg-slate-700/50 border border-slate-700/50 rounded-xl p-3 flex items-center gap-2 transition-all active:scale-95">
+                <CameraIcon size={16} className="text-orange-400" />
+                <span className="text-sm text-white">{labelNames[label]}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {state.progressPhotos.length > 0 ? (
+          <div className="grid grid-cols-2 gap-2">
+            {state.progressPhotos.slice().reverse().map((p) => (
+              <button key={p.id} onClick={() => setPhotoPreview(p)}
+                className="relative aspect-[3/4] bg-slate-900/60 rounded-xl overflow-hidden border border-slate-700/50 active:scale-95 transition-all">
+                <img src={p.uri} alt={p.label} className="w-full h-full object-cover" />
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-slate-900/90 to-transparent p-2">
+                  <div className="text-xs text-white font-semibold">
+                    {p.label === 'pre' ? 'Pre' : p.label === 'week4' ? 'Нед. 4' : p.label === 'week8' ? 'Нед. 8' : p.label === 'week12' ? 'Нед. 12' : 'Заметка'}
+                  </div>
+                  <div className="text-[10px] text-slate-300">{p.date.slice(0, 10)}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="text-xs text-slate-500 text-center py-4">
+            Сделай фото в Pre-Week, потом каждые 4 недели для сравнения.
+          </div>
+        )}
+
+        {!Capacitor.isNativePlatform() && (
+          <div className="mt-3 text-xs text-yellow-400/80 bg-yellow-400/10 rounded-lg p-2">
+            ⚠️ Камера работает только в нативной Android-версии.
+          </div>
+        )}
+      </div>
+
+      {/* Photo preview modal */}
+      {photoPreview && (
+        <div className="fixed inset-0 bg-slate-950/95 z-50 flex flex-col items-center justify-center p-4">
+          <button onClick={() => setPhotoPreview(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white">
+            <X size={28} />
+          </button>
+          <img src={photoPreview.uri} alt={photoPreview.label}
+            className="max-w-full max-h-[70vh] rounded-2xl shadow-2xl object-contain" />
+          <div className="mt-4 text-white text-center">
+            <div className="font-bold">
+              {photoPreview.label === 'pre' ? 'Pre-Week' :
+                photoPreview.label === 'week4' ? 'Неделя 4' :
+                photoPreview.label === 'week8' ? 'Неделя 8' :
+                photoPreview.label === 'week12' ? 'Неделя 12' : 'Заметка'}
+            </div>
+            <div className="text-xs text-slate-400 mt-1">{photoPreview.date.slice(0, 10)}</div>
+          </div>
+          <BigButton variant="danger" onClick={() => {
+            removeProgressPhoto(photoPreview.id);
+            setPhotoPreview(null);
+          }} className="mt-4">
+            🗑 Удалить фото
+          </BigButton>
         </div>
       )}
     </div>
@@ -1844,7 +1937,7 @@ function ReferenceScreen() {
 // ════════════════════════════════════════════════════════════════
 
 function SettingsScreen({ store }: { store: ReturnType<typeof import("./store/useStore").useStore> }) {
-  const { state, updateUser, exportData, importData, resetData } = store;
+  const { state, updateUser, exportData, exportCSV, importData, resetData } = store;
   const [confirmReset, setConfirmReset] = useState(false);
   const [startDateInput, setStartDateInput] = useState(state.user.startDate ?? "");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1855,6 +1948,47 @@ function SettingsScreen({ store }: { store: ReturnType<typeof import("./store/us
     const reader = new FileReader();
     reader.onload = (ev) => importData(String(ev.target?.result ?? ""));
     reader.readAsText(file);
+  };
+
+  // Reminders helpers — re-schedule on toggle/time change
+  const toggleWorkoutReminder = async (enabled: boolean) => {
+    updateUser({ reminderWorkoutEnabled: enabled });
+    if (enabled) {
+      await scheduleWorkoutReminder(state.user.reminderWorkoutTime || "07:00");
+    } else {
+      await cancelReminder(REMINDER_IDS.workout);
+    }
+  };
+  const updateWorkoutTime = async (time: string) => {
+    updateUser({ reminderWorkoutTime: time });
+    if (state.user.reminderWorkoutEnabled) await scheduleWorkoutReminder(time);
+  };
+  const toggleMorningMetrics = async (enabled: boolean) => {
+    updateUser({ reminderMorningMetrics: enabled });
+    if (enabled) {
+      const wake = state.dailyLogs.find((l) => l.sleepWakeup)?.sleepWakeup || "07:00";
+      await scheduleMorningMetricsReminder(wake);
+    } else {
+      await cancelReminder(REMINDER_IDS.morningMetrics);
+    }
+  };
+  const toggleCreatine = async (enabled: boolean) => {
+    updateUser({ reminderCreatine: enabled });
+    if (enabled) await scheduleCreatineReminder(state.user.reminderCreatineTime || "09:00");
+    else await cancelReminder(REMINDER_IDS.creatine);
+  };
+  const updateCreatineTime = async (time: string) => {
+    updateUser({ reminderCreatineTime: time });
+    if (state.user.reminderCreatine) await scheduleCreatineReminder(time);
+  };
+  const toggleWater = async (enabled: boolean) => {
+    updateUser({ reminderWater: enabled });
+    if (enabled) await scheduleWaterReminder();
+    else {
+      for (let i = REMINDER_IDS.waterStart; i <= REMINDER_IDS.waterEnd; i++) {
+        await cancelReminder(i);
+      }
+    }
   };
 
   return (
@@ -1919,6 +2053,85 @@ function SettingsScreen({ store }: { store: ReturnType<typeof import("./store/us
         </div>
       )}
 
+      {/* Reminders */}
+      <div className="bg-slate-800 rounded-2xl border border-slate-700/50 p-4 space-y-3">
+        <div className="text-sm font-semibold text-white">🔔 Уведомления</div>
+
+        <div className="flex items-center justify-between py-1">
+          <div className="flex-1">
+            <div className="text-sm text-slate-200">💪 Утренняя тренировка</div>
+            <div className="text-xs text-slate-500">Напоминание начать сессию</div>
+          </div>
+          <button onClick={() => toggleWorkoutReminder(!state.user.reminderWorkoutEnabled)}
+            className={cn("w-12 h-6 rounded-full transition-all relative",
+              state.user.reminderWorkoutEnabled ? "bg-orange-500" : "bg-slate-600")}>
+            <div className={cn("absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
+              state.user.reminderWorkoutEnabled ? "left-7" : "left-1")} />
+          </button>
+        </div>
+        {state.user.reminderWorkoutEnabled && (
+          <div className="bg-slate-900/60 rounded-xl p-3">
+            <label className="text-xs text-slate-400 mb-1 block">Время</label>
+            <input type="time" value={state.user.reminderWorkoutTime}
+              onChange={(e) => updateWorkoutTime(e.target.value)}
+              className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-orange-500" />
+          </div>
+        )}
+
+        <div className="flex items-center justify-between py-1">
+          <div className="flex-1">
+            <div className="text-sm text-slate-200">📊 Утренние метрики</div>
+            <div className="text-xs text-slate-500">Через 30 мин после подъёма</div>
+          </div>
+          <button onClick={() => toggleMorningMetrics(!state.user.reminderMorningMetrics)}
+            className={cn("w-12 h-6 rounded-full transition-all relative",
+              state.user.reminderMorningMetrics ? "bg-orange-500" : "bg-slate-600")}>
+            <div className={cn("absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
+              state.user.reminderMorningMetrics ? "left-7" : "left-1")} />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between py-1">
+          <div className="flex-1">
+            <div className="text-sm text-slate-200">💊 Креатин</div>
+            <div className="text-xs text-slate-500">Ежедневно 5 г</div>
+          </div>
+          <button onClick={() => toggleCreatine(!state.user.reminderCreatine)}
+            className={cn("w-12 h-6 rounded-full transition-all relative",
+              state.user.reminderCreatine ? "bg-orange-500" : "bg-slate-600")}>
+            <div className={cn("absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
+              state.user.reminderCreatine ? "left-7" : "left-1")} />
+          </button>
+        </div>
+        {state.user.reminderCreatine && (
+          <div className="bg-slate-900/60 rounded-xl p-3">
+            <label className="text-xs text-slate-400 mb-1 block">Время</label>
+            <input type="time" value={state.user.reminderCreatineTime}
+              onChange={(e) => updateCreatineTime(e.target.value)}
+              className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-white focus:outline-none focus:border-orange-500" />
+          </div>
+        )}
+
+        <div className="flex items-center justify-between py-1">
+          <div className="flex-1">
+            <div className="text-sm text-slate-200">💧 Вода</div>
+            <div className="text-xs text-slate-500">Каждые 2 часа (9-19)</div>
+          </div>
+          <button onClick={() => toggleWater(!state.user.reminderWater)}
+            className={cn("w-12 h-6 rounded-full transition-all relative",
+              state.user.reminderWater ? "bg-orange-500" : "bg-slate-600")}>
+            <div className={cn("absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
+              state.user.reminderWater ? "left-7" : "left-1")} />
+          </button>
+        </div>
+
+        {!Capacitor.isNativePlatform() && (
+          <div className="text-xs text-yellow-400/80 bg-yellow-400/10 rounded-lg p-2">
+            ⚠️ Уведомления работают только в нативной Android-версии.
+          </div>
+        )}
+      </div>
+
       {/* Data */}
       <div className="bg-slate-800 rounded-2xl border border-slate-700/50 p-4 space-y-3">
         <div className="text-sm font-semibold text-white">Данные</div>
@@ -1927,6 +2140,9 @@ function SettingsScreen({ store }: { store: ReturnType<typeof import("./store/us
         </div>
         <BigButton variant="secondary" onClick={exportData} className="w-full">
           <Download size={16} className="inline mr-2" />Экспорт JSON
+        </BigButton>
+        <BigButton variant="secondary" onClick={exportCSV} className="w-full">
+          <FileText size={16} className="inline mr-2" />Экспорт CSV (тренировки)
         </BigButton>
         <BigButton variant="secondary" onClick={() => fileRef.current?.click()} className="w-full">
           <Upload size={16} className="inline mr-2" />Импорт JSON

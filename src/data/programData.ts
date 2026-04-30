@@ -388,6 +388,7 @@ export const TEST_FIELDS = [
   { id: "dips", label: "Отжимания на брусьях до отказа", unit: "повт", category: "strength" },
   { id: "squats", label: "Присед без веса 2-0-2 до отказа", unit: "повт", category: "strength" },
   { id: "plank", label: "Планка на время", unit: "сек", category: "strength" },
+  { id: "nordicCurl", label: "Nordic curl (3-сек эксцентрика)", unit: "повт", category: "strength" },
   { id: "standingJump", label: "Прыжок в длину с места (лучшая)", unit: "см", category: "power" },
   { id: "verticalJump", label: "Вертикальный прыжок", unit: "см", category: "power" },
   { id: "sprint30", label: "Спринт 30 м", unit: "сек", category: "speed" },

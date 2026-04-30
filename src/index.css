@@ -21,8 +21,14 @@ html, body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
 
-/* ─── Safe area for iOS ─────────────────────────────────────── */
-.pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+/* ─── Safe area for iOS / Android gesture bar ──────────────── */
+/* env() falls back to 0; we add an Android-friendly minimum via max() */
+.pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+}
+.pt-safe {
+  padding-top: max(env(safe-area-inset-top, 0px), 0px);
+}
 
 /* ─── Input number spinner hide ────────────────────────────── */
 input[type=number]::-webkit-inner-spin-button,

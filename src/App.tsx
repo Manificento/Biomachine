@@ -211,13 +211,24 @@ function Onboarding({ onComplete }: { onComplete: (name: string, startNow: boole
       </div>
       <div className="bg-slate-800 rounded-xl p-4 space-y-3">
         <div className="text-slate-300 font-semibold">Начать прямо сейчас?</div>
-        {[true, false].map((v) => (
-          <button key={String(v)} onClick={() => setStartNow(v)}
-            className={cn("w-full px-4 py-3 rounded-xl border text-left transition-all",
-              startNow === v ? "border-orange-500 bg-orange-500/10 text-orange-400" : "border-slate-600 text-slate-300 hover:bg-slate-700")}>
-            {v ? "🚀 Начинаю Pre-week сегодня" : "📥 У меня уже есть данные (введу вручную)"}
-          </button>
-        ))}
+        <button
+          type="button"
+          onClick={() => setStartNow(true)}
+          className={cn("w-full px-4 py-3 rounded-xl border text-left transition-all focus:outline-none",
+            startNow === true
+              ? "border-orange-500 bg-orange-500/10 text-orange-400"
+              : "border-slate-600 bg-transparent text-slate-300 active:bg-slate-700")}>
+          🚀 Начинаю Pre-week сегодня
+        </button>
+        <button
+          type="button"
+          onClick={() => setStartNow(false)}
+          className={cn("w-full px-4 py-3 rounded-xl border text-left transition-all focus:outline-none",
+            startNow === false
+              ? "border-orange-500 bg-orange-500/10 text-orange-400"
+              : "border-slate-600 bg-transparent text-slate-300 active:bg-slate-700")}>
+          📥 У меня уже есть данные (введу вручную)
+        </button>
       </div>
       <div className="bg-slate-800 rounded-xl p-4">
         <div className="text-slate-400 text-sm">
@@ -686,30 +697,64 @@ function Dashboard({ store, onStartWorkout, onNavigate }: {
   const totalWeeks = 12;
   const progressPct = (currentWeek / totalWeeks) * 100;
 
+  // Pre-Week baseline progress (count filled fields in pre test)
+  const preTest = state.tests.find((t) => t.label === "pre");
+  const preWeekFieldIds = ["pushups", "pullups", "dips", "plank", "standingJump", "sprint30", "restingHR", "weight"];
+  const preWeekFilled = preTest ? preWeekFieldIds.filter((id) => Number(preTest.data[id]) > 0).length : 0;
+  const preWeekTotal = preWeekFieldIds.length;
+  const preWeekPct = (preWeekFilled / preWeekTotal) * 100;
+
   return (
     <div className="pb-24 px-4 space-y-4">
       {/* Hero */}
-      <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-2xl p-5 border border-slate-700/50 mt-4">
-        <div className="flex items-start justify-between mb-3">
-          <div>
-            <div className="text-xs text-slate-400 uppercase tracking-wider">{mesocycle.name}</div>
-            <div className="text-2xl font-black text-white mt-0.5">
-              {currentWeek === 0 ? "Pre-Week" : `Неделя ${currentWeek}`}
-              <span className="text-base font-normal text-slate-400"> / 12</span>
+      {currentWeek === 0 ? (
+        <div className="bg-gradient-to-r from-purple-900/40 to-slate-900 rounded-2xl p-5 border border-purple-500/30 mt-4">
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <div className="text-xs text-purple-300 uppercase tracking-wider">🔬 Pre-Week</div>
+              <div className="text-2xl font-black text-white mt-0.5">Диагностика</div>
+              <div className="text-sm mt-1 text-slate-400">Зафиксируй baseline перед стартом</div>
             </div>
-            <div className="text-sm mt-1 font-semibold" style={{ color: mesocycle.color }}>{mesocycle.label}</div>
+            <div className="text-4xl">🔬</div>
           </div>
-          <div className="text-4xl">{mesocycle.id === 0 ? "🔬" : mesocycle.id === 1 ? "🏗️" : mesocycle.id === 3 ? "⚡" : mesocycle.id === 5 ? "🚀" : "♻️"}</div>
+          <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+            <div className="h-full rounded-full transition-all bg-purple-500" style={{ width: `${preWeekPct}%` }} />
+          </div>
+          <div className="flex justify-between text-xs text-slate-500 mt-1">
+            <span>Заполнено</span>
+            <span>{preWeekFilled} / {preWeekTotal} полей</span>
+            <span>{Math.round(preWeekPct)}%</span>
+          </div>
+          {preWeekFilled < preWeekTotal && (
+            <button onClick={() => onNavigate("tests")}
+              className="mt-3 w-full text-left bg-purple-500/15 border border-purple-500/30 rounded-xl px-3 py-2 text-xs text-purple-200 hover:bg-purple-500/25 transition-all">
+              📋 Перейти к тестам и заполнить baseline →
+            </button>
+          )}
         </div>
-        <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-          <div className="h-full rounded-full transition-all" style={{ width: `${progressPct}%`, background: mesocycle.color }} />
+      ) : (
+        <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-2xl p-5 border border-slate-700/50 mt-4">
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <div className="text-xs text-slate-400 uppercase tracking-wider">{mesocycle.name}</div>
+              <div className="text-2xl font-black text-white mt-0.5">
+                Неделя {currentWeek}
+                <span className="text-base font-normal text-slate-400"> / 12</span>
+              </div>
+              <div className="text-sm mt-1 font-semibold" style={{ color: mesocycle.color }}>{mesocycle.label}</div>
+            </div>
+            <div className="text-4xl">{mesocycle.id === 1 ? "🏗️" : mesocycle.id === 3 ? "⚡" : mesocycle.id === 5 ? "🚀" : "♻️"}</div>
+          </div>
+          <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+            <div className="h-full rounded-full transition-all" style={{ width: `${progressPct}%`, background: mesocycle.color }} />
+          </div>
+          <div className="flex justify-between text-xs text-slate-500 mt-1">
+            <span>Неделя {currentWeek}</span>
+            <span>{Math.round(progressPct)}%</span>
+            <span>12 недель</span>
+          </div>
         </div>
-        <div className="flex justify-between text-xs text-slate-500 mt-1">
-          <span>Неделя {currentWeek}</span>
-          <span>{Math.round(progressPct)}%</span>
-          <span>12 недель</span>
-        </div>
-      </div>
+      )}
 
       {/* Today's workout */}
       <div className="bg-slate-800 rounded-2xl border border-slate-700/50 p-4">
@@ -1265,7 +1310,7 @@ function SleepScreen({ store }: { store: ReturnType<typeof import("./store/useSt
   const [quality, setQuality] = useState(todayLog?.sleepQuality ?? 7);
   const [hygiene, setHygiene] = useState<string[]>(todayLog?.sleepHygiene ?? []);
   const [breathing, setBreathing] = useState<typeof BREATHING_EXERCISES[0] | null>(null);
-  const [_mobilityTimerState, setMobilityTimer] = useState<{ seconds: number; running: boolean } | null>(null);
+  const [mobilityTimerOpen, setMobilityTimerOpen] = useState(false);
 
   const calcDuration = (bed: string, wake: string) => {
     const [bh, bm] = bed.split(":").map(Number);
@@ -1385,10 +1430,13 @@ function SleepScreen({ store }: { store: ReturnType<typeof import("./store/useSt
       </div>
 
       {/* Daily mobility */}
+      {mobilityTimerOpen && (
+        <RestTimer initialSeconds={600} nextLabel="Растяжка завершена" onClose={() => setMobilityTimerOpen(false)} />
+      )}
       <div className="bg-slate-800 rounded-2xl border border-slate-700/50 p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="text-sm font-semibold text-white">🧘 Мобильность дня (5–10 мин)</div>
-          <BigButton variant="secondary" onClick={() => setMobilityTimer({ seconds: 600, running: true })} className="py-1.5 px-3 text-xs">
+          <BigButton variant="secondary" onClick={() => setMobilityTimerOpen(true)} className="py-1.5 px-3 text-xs">
             <Timer size={12} className="inline mr-1" />10 мин
           </BigButton>
         </div>
@@ -1471,12 +1519,31 @@ function TestsScreen({ store }: { store: ReturnType<typeof import("./store/useSt
   const pullups = Number(form.pullups) || 0;
   const pushups = Number(form.pushups) || 0;
   const dips = Number(form.dips) || 0;
+  const nordicCurl = Number(form.nordicCurl) || 0;
   const preJump = Number(preTest?.data.standingJump) || 0;
   const curJump = Number(form.standingJump) || 0;
 
+  // Average sleep over last 14 days (only counting days with logged sleep > 0)
+  const last14Sleep = (() => {
+    const today = new Date();
+    const cutoff = new Date(today);
+    cutoff.setDate(today.getDate() - 14);
+    const recent = state.dailyLogs.filter((l) => {
+      if (!l.sleep || l.sleep <= 0) return false;
+      const d = new Date(l.date);
+      return d >= cutoff && d <= today;
+    });
+    if (recent.length === 0) return 0;
+    return recent.reduce((sum, l) => sum + l.sleep, 0) / recent.length;
+  })();
+
   const gateChecks: Record<string, boolean> = {
-    pullups6: pullups >= 6, pushups25: pushups >= 25, dips10: dips >= 10,
-    nordic5: false, jumpPlus10: curJump - preJump >= 10, sleep75: false,
+    pullups6: pullups >= 6,
+    pushups25: pushups >= 25,
+    dips10: dips >= 10,
+    nordic5: nordicCurl >= 5,
+    jumpPlus10: curJump - preJump >= 10,
+    sleep75: last14Sleep >= 7.5,
   };
 
   return (

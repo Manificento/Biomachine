@@ -46,9 +46,16 @@ subprojects {
             sourceCompatibility = '17'
             targetCompatibility = '17'
         }
-        tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-            kotlinOptions {
-                jvmTarget = '17'
+        // Kotlin compile tasks are configured by their own AGP plugin via
+        // android.kotlinOptions above. Avoid referencing
+        // org.jetbrains.kotlin.gradle.tasks.KotlinCompile by FQN here:
+        // the Kotlin Gradle plugin is not in the root buildscript classpath,
+        // so the class symbol is unresolvable and Gradle fails configuring
+        // the project with "Could not get unknown property 'org'".
+        // Fall back to matching by task class simple name at execution time.
+        tasks.matching { it.class.name.contains('KotlinCompile') }.configureEach { task ->
+            if (task.hasProperty('kotlinOptions')) {
+                task.kotlinOptions.jvmTarget = '17'
             }
         }
     }
